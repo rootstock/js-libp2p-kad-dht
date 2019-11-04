@@ -21,6 +21,7 @@ message Message {
     GET_PROVIDERS = 3;
     FIND_NODE = 4;
     PING = 5;
+    SEND_MSG = 6;
   }
 
   enum ConnectionType {
