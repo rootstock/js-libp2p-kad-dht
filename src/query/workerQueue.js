@@ -33,6 +33,7 @@ class WorkerQueue {
    */
   setupQueue () {
     const q = queue((peer, cb) => {
+
       promiseToCallback(this.processNext(peer))(cb)
     }, this.concurrency)
 
