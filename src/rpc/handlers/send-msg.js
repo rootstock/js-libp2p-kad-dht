@@ -3,8 +3,8 @@
 const waterfall = require('async/waterfall')
 const each = require('async/each')
 
-const Message = require('libp2p-kad-dht/src/message')
-const utils = require('libp2p-kad-dht/src/utils')
+const Message = require('../../message')
+const utils = require('../../utils')
 
 module.exports = (dht) => {
   const log = utils.logger(dht.peerInfo.id, 'rpc:send-msg')
