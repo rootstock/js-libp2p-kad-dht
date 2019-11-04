@@ -25,6 +25,8 @@ const Message = require('./message')
 const RandomWalk = require('./random-walk')
 const QueryManager = require('./query-manager')
 const assert = require('assert')
+const multihashingAsync = require('multihashing-async')
+
 
 /**
  * A DHT implementation modeled after Kademlia with S/Kademlia modifications.
@@ -520,6 +522,62 @@ class KadDHT extends EventEmitter {
         return callback()
       }
       callback(null, this.peerBook.get(p))
+    })
+  }
+
+  sendMessage(userId, msgContent, partialAddressing, callback){
+    const errors = []
+    //We don't want to make an RPC call to the actual peer, we want to forward a message so I look
+    //my local routing table
+    let userBuff = userId._id
+
+    //Then I send the message to all my closest peers
+    waterfall([
+      (cb) => utils.convertPeerId(userId, cb),
+      (dhtId, cb) =>{
+        let peers =[] 
+        if(partialAddressing){
+          dhtId = dhtId.slice(0, dhtId.length-1)
+          console.log("Ofuscating, New destination id is:")
+          console.log(dhtId)
+          peers = this.routingTable.closestPeersPartial(dhtId, this.kBucketSize)
+        }
+        else{
+          peers = this.routingTable.closestPeers(dhtId, this.kBucketSize)
+        }
+        cb(null, peers)
+      },
+      (closest, cb) => {
+        console.log("closest peers")
+        console.log(closest)
+        const content = Buffer.from(msgContent)
+        const timeReceived = new Date()
+        let record  = new libp2pRecord.Record(userBuff, content, timeReceived)
+       
+        const msg = new Message(Message.TYPES.SEND_MSG, userBuff, 5)
+        msg.record = record
+        
+        each(closest, (peer, cb) => {
+          //this._log('send message %s to %s', key.toBaseEncodedString(), peer.toB58String())
+          this.network.sendMessage(peer, msg, (err) => {
+
+            if (err) {
+              console.log("ERRROR SENDING")
+              errors.push(err)
+            }
+            cb()
+          })
+        }, cb)
+      }
+    ], (err) => {
+      console.log(err)
+      if (errors.length) {
+        // This should be infrequent. This means a peer we previously connected
+        // to failed to exchange the provide message. If getClosestPeers was an
+        // iterator, we could continue to pull until we announce to kBucketSize peers.
+        err = errcode(`Failed to provide to ${errors.length} of ${this.kBucketSize} peers`, 'ERR_SOME_PROVIDES_FAILED', { errors })
+      }
+      callback(err)
     })
   }
 

@@ -115,6 +115,17 @@ class RoutingTable {
     return this.kb.closest(key, count).map((p) => p.peer)
   }
 
+   /**
+   * Retrieve the `count`-closest peers to the given partial/ofuscated key.
+   *
+   * @param {Buffer} key
+   * @param {number} count
+   * @returns {Array<PeerId>}
+   */
+  closestPeersPartial (key, count) {
+    return this.kb.closestPartial(key, count).map((p) => p.peer)
+  }
+
   /**
    * Add or update the routing table with the given peer.
    *
