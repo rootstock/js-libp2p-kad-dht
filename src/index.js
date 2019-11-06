@@ -553,7 +553,7 @@ class KadDHT extends EventEmitter {
         const timeReceived = new Date()
         let record  = new libp2pRecord.Record(userBuff, content, timeReceived)
 
-        const msg = new Message(Message.TYPES.SEND_MSG, userBuff, 5)
+        const msg = new Message(Message.TYPES.SEND_MSG, userBuff, 2)
         msg.record = record
 
         each(closest, (peer, cb) => {

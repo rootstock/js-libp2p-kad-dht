@@ -55,7 +55,7 @@ module.exports = (dht) => {
 
     if (msg.key.equals(dht.peerInfo.id.id)){
       //Its me!
-      console.log(msg.record.value.toString()) //version dummy de un procesamiento
+      console.log('Received [%s] with level %s',msg.record.value.toString(), msg._clusterLevelRaw) //version dummy de un procesamiento
       callback(null)
     }
     else{
