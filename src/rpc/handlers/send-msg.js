@@ -55,7 +55,8 @@ module.exports = (dht) => {
 
     if (msg.key.equals(dht.peerInfo.id.id)){
       //Its me!
-      console.log('Received [%s] with level %s',msg.record.value.toString(), msg._clusterLevelRaw) //version dummy de un procesamiento
+      //console.log('Received [%s] with level %s',msg.record.value.toString(), msg._clusterLevelRaw) //version dummy de un procesamiento
+      dht.emit('kad-msg-received', msg.record.value.toString())
       callback(null)
     }
     else{
