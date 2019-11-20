@@ -68,7 +68,7 @@ module.exports = (dht) => {
           (cb) => {
             each(peers, (nextPeer, cb) => {
               dht.network.sendMessage(nextPeer, msg, (err) => {
-                if (err) errors.push(err)
+                //if (err) errors.push(err)
                 cb()
               })
             }, cb)
