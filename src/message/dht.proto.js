@@ -1,4 +1,4 @@
-'use strict'
+"use strict";
 
 module.exports = `// can't use, because protocol-buffers doesn't support imports
 // so we have to duplicate for now :(
@@ -11,6 +11,27 @@ message Record {
   optional bytes author = 3;
   optional bytes signature = 4;
   optional string timeReceived = 5;
+}
+
+
+message MsgContent {
+  required string senderId = 1;
+  required string msgText = 2;
+}
+
+ //Input/output structure for ECIES operations.
+ // @typedef {Object} Ecies
+ // @property {Buffer} iv - Initialization vector (16 bytes)
+ // @property {Buffer} ephemPublicKey - Ephemeral public key (65 bytes)
+ // @property {Buffer} ciphertext - The result of encryption (variable size)
+ // @property {Buffer} mac - Message authentication code (32 bytes)
+ 
+message CypherText {
+  required bytes iv = 1;
+  required bytes ephemPublicKey = 2;
+  required bytes ciphertext = 3;
+  required bytes mac = 4;
+  required int32 msgNonce = 5;
 }
 
 message Message {
@@ -74,4 +95,4 @@ message Message {
   // Used to return Providers
   // GET_VALUE, ADD_PROVIDER, GET_PROVIDERS
   repeated Peer providerPeers = 9;
-}`
+}`;

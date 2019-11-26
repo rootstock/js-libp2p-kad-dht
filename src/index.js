@@ -1,31 +1,35 @@
-'use strict'
+"use strict";
 
-const { EventEmitter } = require('events')
-const libp2pRecord = require('libp2p-record')
-const MemoryStore = require('interface-datastore').MemoryDatastore
-const waterfall = require('async/waterfall')
-const each = require('async/each')
-const filter = require('async/filter')
-const timeout = require('async/timeout')
-const PeerId = require('peer-id')
-const PeerInfo = require('peer-info')
-const crypto = require('libp2p-crypto')
-const promiseToCallback = require('promise-to-callback')
+const { EventEmitter } = require("events");
+const libp2pRecord = require("libp2p-record");
+const MemoryStore = require("interface-datastore").MemoryDatastore;
+const waterfall = require("async/waterfall");
+const each = require("async/each");
+const filter = require("async/filter");
+const timeout = require("async/timeout");
+const PeerId = require("peer-id");
+const PeerInfo = require("peer-info");
+const crypto = require("libp2p-crypto");
+const promiseToCallback = require("promise-to-callback");
 
-const errcode = require('err-code')
+const errcode = require("err-code");
 
-const RoutingTable = require('./routing')
-const utils = require('./utils')
-const c = require('./constants')
-const Query = require('./query')
-const Network = require('./network')
-const privateApi = require('./private')
-const Providers = require('./providers')
-const Message = require('./message')
-const RandomWalk = require('./random-walk')
-const QueryManager = require('./query-manager')
-const assert = require('assert')
-const multihashingAsync = require('multihashing-async')
+const RoutingTable = require("./routing");
+const utils = require("./utils");
+const c = require("./constants");
+const Query = require("./query");
+const Network = require("./network");
+const privateApi = require("./private");
+const Providers = require("./providers");
+const Message = require("./message");
+const RandomWalk = require("./random-walk");
+const QueryManager = require("./query-manager");
+const assert = require("assert");
+
+const eccrypto = require("eccrypto");
+const protons = require("protons");
+
+const pbm = protons(require("./message/dht.proto"));
 
 /**
  * A DHT implementation modeled after Kademlia with S/Kademlia modifications.
@@ -56,92 +60,97 @@ class KadDHT extends EventEmitter {
    * @param {object} options.selectors selectors object with namespace as keys and function(key, records)
    * @param {randomWalkOptions} options.randomWalk randomWalk options
    */
-  constructor (sw, options) {
-    super()
-    assert(sw, 'libp2p-kad-dht requires a instance of Switch')
-    options = options || {}
-    options.validators = options.validators || {}
-    options.selectors = options.selectors || {}
+  constructor(sw, options) {
+    super();
+    assert(sw, "libp2p-kad-dht requires a instance of Switch");
+    options = options || {};
+    options.validators = options.validators || {};
+    options.selectors = options.selectors || {};
+
+    this.currentPrivateKeys = new Set();
+    this.currentRecipientPublicKeys = new Map();
 
     /**
      * Local reference to the libp2p-switch instance
      *
      * @type {Switch}
      */
-    this.switch = sw
+    this.switch = sw;
 
     /**
      * k-bucket size, defaults to 20
      *
      * @type {number}
      */
-    this.kBucketSize = options.kBucketSize || c.K
+    this.kBucketSize = options.kBucketSize || c.K;
 
     /**
      * ALPHA concurrency at which each query path with run, defaults to 3
      * @type {number}
      */
-    this.concurrency = options.concurrency || c.ALPHA
+    this.concurrency = options.concurrency || c.ALPHA;
 
     /**
      * Number of disjoint query paths to use
      * This is set to `kBucketSize`/2 per the S/Kademlia paper
      * @type {number}
      */
-    this.disjointPaths = Math.ceil(this.kBucketSize / 2)
+    this.disjointPaths = Math.ceil(this.kBucketSize / 2);
 
     /**
      * The routing table.
      *
      * @type {RoutingTable}
      */
-    this.routingTable = new RoutingTable(this.peerInfo.id, this.kBucketSize)
+    this.routingTable = new RoutingTable(this.peerInfo.id, this.kBucketSize);
 
     /**
      * Reference to the datastore, uses an in-memory store if none given.
      *
      * @type {Datastore}
      */
-    this.datastore = options.datastore || new MemoryStore()
+    this.datastore = options.datastore || new MemoryStore();
 
     /**
      * Provider management
      *
      * @type {Providers}
      */
-    this.providers = new Providers(this.datastore, this.peerInfo.id)
+    this.providers = new Providers(this.datastore, this.peerInfo.id);
 
     this.validators = {
       pk: libp2pRecord.validator.validators.pk,
       ...options.validators
-    }
+    };
 
     this.selectors = {
       pk: libp2pRecord.selection.selectors.pk,
       ...options.selectors
-    }
+    };
 
-    this.network = new Network(this)
+    this.network = new Network(this);
 
-    this._log = utils.logger(this.peerInfo.id)
+    this._log = utils.logger(this.peerInfo.id);
 
     // Inject private apis so we don't clutter up this file
-    const pa = privateApi(this)
-    Object.keys(pa).forEach((name) => { this[name] = pa[name] })
+    const pa = privateApi(this);
+    Object.keys(pa).forEach(name => {
+      this[name] = pa[name];
+    });
 
     /**
      * Random walk management
      *
      * @type {RandomWalk}
      */
-    this.randomWalk = new RandomWalk(this, options.randomWalk)
+    this.randomWalk = new RandomWalk(this, options.randomWalk);
 
     /**
      * Keeps track of running queries
      *
      * @type {QueryManager}
      */
-    this._queryManager = new QueryManager()
+    this._queryManager = new QueryManager();
   }
 
   /**
@@ -149,8 +158,8 @@ class KadDHT extends EventEmitter {
    *
    * @type {bool}
    */
-  get isStarted () {
-    return this._running
+  get isStarted() {
+    return this._running;
   }
 
   /**
@@ -159,18 +168,18 @@ class KadDHT extends EventEmitter {
    * @param {function(Error)} callback
    * @returns {void}
    */
-  start (callback) {
-    this._running = true
-    this._queryManager.start()
-    this.network.start((err) => {
+  start(callback) {
+    this._running = true;
+    this._queryManager.start();
+    this.network.start(err => {
       if (err) {
-        return callback(err)
+        return callback(err);
       }
 
       // Start random walk, it will not run if it's disabled
-      this.randomWalk.start()
-      callback()
-    })
+      this.randomWalk.start();
+      callback();
+    });
   }
 
   /**
@@ -180,12 +189,12 @@ class KadDHT extends EventEmitter {
    * @param {function(Error)} callback
    * @returns {void}
    */
-  stop (callback) {
-    this._running = false
-    this.randomWalk.stop()
-    this.providers.stop()
-    this._queryManager.stop()
-    this.network.stop(callback)
+  stop(callback) {
+    this._running = false;
+    this.randomWalk.stop();
+    this.providers.stop();
+    this._queryManager.stop();
+    this.network.stop(callback);
   }
 
   /**
@@ -193,12 +202,12 @@ class KadDHT extends EventEmitter {
    *
    * @type {PeerInfo}
    */
-  get peerInfo () {
-    return this.switch._peerInfo
+  get peerInfo() {
+    return this.switch._peerInfo;
   }
 
-  get peerBook () {
-    return this.switch._peerBook
+  get peerBook() {
+    return this.switch._peerBook;
   }
 
   /**
@@ -212,48 +221,66 @@ class KadDHT extends EventEmitter {
    * @param {function(Error)} callback
    * @returns {void}
    */
-  put (key, value, options, callback) {
-    if (typeof options === 'function') {
-      callback = options
-      options = {}
+  put(key, value, options, callback) {
+    if (typeof options === "function") {
+      callback = options;
+      options = {};
     } else {
-      options = options || {}
+      options = options || {};
     }
 
-    this._log('PutValue %b', key)
+    this._log("PutValue %b", key);
 
-    waterfall([
-      (cb) => utils.createPutRecord(key, value, cb),
-      (rec, cb) => waterfall([
-        (cb) => this._putLocal(key, rec, cb),
-        (cb) => this.getClosestPeers(key, { shallow: true }, cb),
-        (peers, cb) => {
-          // Ensure we have a default `minPeers`
-          options.minPeers = options.minPeers || peers.length
-          // filter out the successful puts
-          filter(peers, (peer, cb) => {
-            this._putValueToPeer(key, rec, peer, (err) => {
-              if (err) {
-                this._log.error('Failed to put to peer (%b): %s', peer.id, err)
-                return cb(null, false)
+    waterfall(
+      [
+        cb => utils.createPutRecord(key, value, cb),
+        (rec, cb) =>
+          waterfall(
+            [
+              cb => this._putLocal(key, rec, cb),
+              cb => this.getClosestPeers(key, { shallow: true }, cb),
+              (peers, cb) => {
+                // Ensure we have a default `minPeers`
+                options.minPeers = options.minPeers || peers.length;
+                // filter out the successful puts
+                filter(
+                  peers,
+                  (peer, cb) => {
+                    this._putValueToPeer(key, rec, peer, err => {
+                      if (err) {
+                        this._log.error(
+                          "Failed to put to peer (%b): %s",
+                          peer.id,
+                          err
+                        );
+                        return cb(null, false);
+                      }
+                      cb(null, true);
+                    });
+                  },
+                  (err, results) => {
+                    if (err) return cb(err);
+
+                    // Did we put to enough peers?
+                    if (options.minPeers > results.length) {
+                      const error = errcode(
+                        new Error("Failed to put value to enough peers"),
+                        "ERR_NOT_ENOUGH_PUT_PEERS"
+                      );
+                      this._log.error(error);
+                      return cb(error);
+                    }
+
+                    cb();
+                  }
+                );
               }
-              cb(null, true)
-            })
-          }, (err, results) => {
-            if (err) return cb(err)
-
-            // Did we put to enough peers?
-            if (options.minPeers > results.length) {
-              const error = errcode(new Error('Failed to put value to enough peers'), 'ERR_NOT_ENOUGH_PUT_PEERS')
-              this._log.error(error)
-              return cb(error)
-            }
-
-            cb()
-          })
-        }
-      ], cb)
-    ], callback)
+            ],
+            cb
+          )
+      ],
+      callback
+    );
   }
 
   /**
@@ -266,21 +293,22 @@ class KadDHT extends EventEmitter {
    * @param {function(Error, Buffer)} callback
    * @returns {void}
    */
-  get (key, options, callback) {
-    if (typeof options === 'function') {
-      callback = options
-      options = {}
+  get(key, options, callback) {
+    if (typeof options === "function") {
+      callback = options;
+      options = {};
     } else {
-      options = options || {}
+      options = options || {};
     }
 
     if (!options.maxTimeout && !options.timeout) {
-      options.timeout = c.minute // default
-    } else if (options.maxTimeout && !options.timeout) { // TODO this will be deprecated in a next release
-      options.timeout = options.maxTimeout
+      options.timeout = c.minute; // default
+    } else if (options.maxTimeout && !options.timeout) {
+      // TODO this will be deprecated in a next release
+      options.timeout = options.maxTimeout;
     }
 
-    this._get(key, options, callback)
+    this._get(key, options, callback);
   }
 
   /**
@@ -293,112 +321,119 @@ class KadDHT extends EventEmitter {
    * @param {function(Error, Array<{from: PeerId, val: Buffer}>)} callback
    * @returns {void}
    */
-  getMany (key, nvals, options, callback) {
-    if (typeof options === 'function') {
-      callback = options
-      options = {}
+  getMany(key, nvals, options, callback) {
+    if (typeof options === "function") {
+      callback = options;
+      options = {};
     } else {
-      options = options || {}
+      options = options || {};
     }
 
     if (!options.maxTimeout && !options.timeout) {
-      options.timeout = c.minute // default
-    } else if (options.maxTimeout && !options.timeout) { // TODO this will be deprecated in a next release
-      options.timeout = options.maxTimeout
+      options.timeout = c.minute; // default
+    } else if (options.maxTimeout && !options.timeout) {
+      // TODO this will be deprecated in a next release
+      options.timeout = options.maxTimeout;
     }
 
-    this._log('getMany %b (%s)', key, nvals)
-    let vals = []
+    this._log("getMany %b (%s)", key, nvals);
+    let vals = [];
 
     this._getLocal(key, (err, localRec) => {
       if (err && nvals === 0) {
-        return callback(err)
+        return callback(err);
       }
 
       if (err == null) {
         vals.push({
           val: localRec.value,
           from: this.peerInfo.id
-        })
+        });
       }
 
       if (vals.length >= nvals) {
-        return callback(null, vals)
+        return callback(null, vals);
       }
 
-      const paths = []
-      waterfall([
-        (cb) => utils.convertBuffer(key, cb),
-        (id, cb) => {
-          const rtp = this.routingTable.closestPeers(id, this.kBucketSize)
+      const paths = [];
+      waterfall(
+        [
+          cb => utils.convertBuffer(key, cb),
+          (id, cb) => {
+            const rtp = this.routingTable.closestPeers(id, this.kBucketSize);
 
-          this._log('peers in rt: %d', rtp.length)
-          if (rtp.length === 0) {
-            const errMsg = 'Failed to lookup key! No peers from routing table!'
+            this._log("peers in rt: %d", rtp.length);
+            if (rtp.length === 0) {
+              const errMsg =
+                "Failed to lookup key! No peers from routing table!";
 
-            this._log.error(errMsg)
-            return cb(errcode(new Error(errMsg), 'ERR_NO_PEERS_IN_ROUTING_TABLE'))
+              this._log.error(errMsg);
+              return cb(
+                errcode(new Error(errMsg), "ERR_NO_PEERS_IN_ROUTING_TABLE")
+              );
+            }
+
+            // we have peers, lets do the actual query to them
+            const query = new Query(this, key, (pathIndex, numPaths) => {
+              // This function body runs once per disjoint path
+              const pathSize = utils.pathSize(nvals - vals.length, numPaths);
+              const pathVals = [];
+              paths.push(pathVals);
+
+              // Here we return the query function to use on this particular disjoint path
+              return async peer => {
+                let rec, peers, lookupErr;
+                try {
+                  const results = await this._getValueOrPeersAsync(peer, key);
+                  rec = results.record;
+                  peers = results.peers;
+                } catch (err) {
+                  // If we have an invalid record we just want to continue and fetch a new one.
+                  if (err.code !== "ERR_INVALID_RECORD") {
+                    throw err;
+                  }
+                  lookupErr = err;
+                }
+
+                const res = { closerPeers: peers };
+
+                if ((rec && rec.value) || lookupErr) {
+                  pathVals.push({
+                    val: rec && rec.value,
+                    from: peer
+                  });
+                }
+
+                // enough is enough
+                if (pathVals.length >= pathSize) {
+                  res.pathComplete = true;
+                }
+
+                return res;
+              };
+            });
+
+            // run our query
+            timeout(_cb => {
+              promiseToCallback(query.run(rtp))(_cb);
+            }, options.timeout)((err, res) => {
+              query.stop();
+              cb(err, res);
+            });
+          }
+        ],
+        err => {
+          // combine vals from each path
+          vals = [].concat.apply(vals, paths).slice(0, nvals);
+
+          if (err && vals.length === 0) {
+            return callback(err);
           }
 
-          // we have peers, lets do the actual query to them
-          const query = new Query(this, key, (pathIndex, numPaths) => {
-            // This function body runs once per disjoint path
-            const pathSize = utils.pathSize(nvals - vals.length, numPaths)
-            const pathVals = []
-            paths.push(pathVals)
-
-            // Here we return the query function to use on this particular disjoint path
-            return async (peer) => {
-              let rec, peers, lookupErr
-              try {
-                const results = await this._getValueOrPeersAsync(peer, key)
-                rec = results.record
-                peers = results.peers
-              } catch (err) {
-                // If we have an invalid record we just want to continue and fetch a new one.
-                if (err.code !== 'ERR_INVALID_RECORD') {
-                  throw err
-                }
-                lookupErr = err
-              }
-
-              const res = { closerPeers: peers }
-
-              if ((rec && rec.value) || lookupErr) {
-                pathVals.push({
-                  val: rec && rec.value,
-                  from: peer
-                })
-              }
-
-              // enough is enough
-              if (pathVals.length >= pathSize) {
-                res.pathComplete = true
-              }
-
-              return res
-            }
-          })
-
-          // run our query
-          timeout((_cb) => {
-            promiseToCallback(query.run(rtp))(_cb)
-          }, options.timeout)((err, res) => {
-            query.stop()
-            cb(err, res)
-          })
+          callback(null, vals);
         }
-      ], (err) => {
-        // combine vals from each path
-        vals = [].concat.apply(vals, paths).slice(0, nvals)
-
-        if (err && vals.length === 0) {
-          return callback(err)
-        }
-
-        callback(null, vals)
-      })
-    })
+      );
+    });
   }
 
   /**
@@ -410,51 +445,54 @@ class KadDHT extends EventEmitter {
    * @param {function(Error, Array<PeerId>)} callback
    * @returns {void}
    */
-  getClosestPeers (key, options, callback) {
-    this._log('getClosestPeers to %b', key)
+  getClosestPeers(key, options, callback) {
+    this._log("getClosestPeers to %b", key);
 
-    if (typeof options === 'function') {
-      callback = options
+    if (typeof options === "function") {
+      callback = options;
       options = {
         shallow: false
-      }
+      };
     }
 
     utils.convertBuffer(key, (err, id) => {
       if (err) {
-        return callback(err)
+        return callback(err);
       }
 
-      const tablePeers = this.routingTable.closestPeers(id, this.kBucketSize)
+      const tablePeers = this.routingTable.closestPeers(id, this.kBucketSize);
 
       const q = new Query(this, key, () => {
         // There is no distinction between the disjoint paths,
         // so there are no per-path variables in this scope.
         // Just return the actual query function.
-        return async (peer) => {
-          const closer = await this._closerPeersSingleAsync(key, peer)
+        return async peer => {
+          const closer = await this._closerPeersSingleAsync(key, peer);
           return {
             closerPeers: closer,
             pathComplete: options.shallow ? true : undefined
-          }
-        }
-      })
+          };
+        };
+      });
 
       promiseToCallback(q.run(tablePeers))((err, res) => {
         if (err) {
-          return callback(err)
+          return callback(err);
         }
 
         if (!res || !res.finalSet) {
-          return callback(null, [])
+          return callback(null, []);
         }
 
-        waterfall([
-          (cb) => utils.sortClosestPeers(Array.from(res.finalSet), id, cb),
-          (sorted, cb) => cb(null, sorted.slice(0, this.kBucketSize))
-        ], callback)
-      })
-    })
+        waterfall(
+          [
+            cb => utils.sortClosestPeers(Array.from(res.finalSet), id, cb),
+            (sorted, cb) => cb(null, sorted.slice(0, this.kBucketSize))
+          ],
+          callback
+        );
+      });
+    });
   }
 
   /**
@@ -464,43 +502,43 @@ class KadDHT extends EventEmitter {
    * @param {function(Error, PubKey)} callback
    * @returns {void}
    */
-  getPublicKey (peer, callback) {
-    this._log('getPublicKey %s', peer.toB58String())
+  getPublicKey(peer, callback) {
+    this._log("getPublicKey %s", peer.toB58String());
     // local check
-    let info
+    let info;
     if (this.peerBook.has(peer)) {
-      info = this.peerBook.get(peer)
+      info = this.peerBook.get(peer);
 
       if (info && info.id.pubKey) {
-        this._log('getPublicKey: found local copy')
-        return callback(null, info.id.pubKey)
+        this._log("getPublicKey: found local copy");
+        return callback(null, info.id.pubKey);
       }
     } else {
-      info = this.peerBook.put(new PeerInfo(peer))
+      info = this.peerBook.put(new PeerInfo(peer));
     }
     // try the node directly
     this._getPublicKeyFromNode(peer, (err, pk) => {
       if (!err) {
-        info.id = new PeerId(peer.id, null, pk)
-        this.peerBook.put(info)
+        info.id = new PeerId(peer.id, null, pk);
+        this.peerBook.put(info);
 
-        return callback(null, pk)
+        return callback(null, pk);
       }
 
       // dht directly
-      const pkKey = utils.keyForPublicKey(peer)
+      const pkKey = utils.keyForPublicKey(peer);
       this.get(pkKey, (err, value) => {
         if (err) {
-          return callback(err)
+          return callback(err);
         }
 
-        const pk = crypto.unmarshalPublicKey(value)
-        info.id = new PeerId(peer, null, pk)
-        this.peerBook.put(info)
+        const pk = crypto.unmarshalPublicKey(value);
+        info.id = new PeerId(peer, null, pk);
+        this.peerBook.put(info);
 
-        callback(null, pk)
-      })
-    })
+        callback(null, pk);
+      });
+    });
   }
 
   /**
@@ -511,73 +549,157 @@ class KadDHT extends EventEmitter {
    * @param {function(Error, PeerInfo)} callback
    * @returns {void}
    */
-  findPeerLocal (peer, callback) {
-    this._log('findPeerLocal %s', peer.toB58String())
+  findPeerLocal(peer, callback) {
+    this._log("findPeerLocal %s", peer.toB58String());
     this.routingTable.find(peer, (err, p) => {
       if (err) {
-        return callback(err)
+        return callback(err);
       }
       if (!p || !this.peerBook.has(p)) {
-        return callback()
+        return callback();
       }
-      callback(null, this.peerBook.get(p))
-    })
+      callback(null, this.peerBook.get(p));
+    });
   }
 
-  sendMessage(userId, msgContent, partialAddressing, callback){
-    const errors = []
+  sendMessage(userId, msgContent, msgNonce, partialAddressing, callback) {
+    const errors = [];
     //We don't want to make an RPC call to the actual peer, we want to forward a message so I look
     //my local routing table
-    let userBuff = userId._id
+    let userBuff = userId._id;
 
     //Then I send the message to all my closest peers
-    waterfall([
-      (cb) => utils.convertPeerId(userId, cb),
-      (dhtId, cb) =>{
-        let peers =[] 
-        if(partialAddressing){
-          dhtId = dhtId.slice(0, dhtId.length-1)
-          console.log("Ofuscating, New destination id is:")
-          console.log(dhtId)
-          peers = this.routingTable.closestPeersPartial(dhtId, this.kBucketSize)
+    waterfall(
+      [
+        cb => utils.convertPeerId(userId, cb),
+        (dhtId, cb) => {
+          let peers = [];
+          if (partialAddressing) {
+            dhtId = dhtId.slice(0, dhtId.length - 1);
+
+            peers = this.routingTable.closestPeersPartial(
+              dhtId,
+              this.kBucketSize
+            );
+          } else {
+            peers = this.routingTable.closestPeers(dhtId, this.kBucketSize);
+          }
+          cb(null, peers);
+        },
+        (closest, cb) => {
+          const privateKey = eccrypto.generatePrivate();
+          this.currentPrivateKeys.add(privateKey.toString("base64"));
+
+          let recipientPubK;
+
+          //I might have ephemeral keys to use
+
+          if (!this.currentRecipientPublicKeys.has(userId._idB58String)) {
+            this.currentRecipientPublicKeys.set(userId._idB58String, new Set());
+          }
+
+          const pubKeys = this.currentRecipientPublicKeys.get(
+            userId._idB58String
+          );
+
+          if (pubKeys.size > 0) {
+            console.log(
+              "You have %s public keys for user %s",
+              pubKeys.size,
+              userId._idB58String
+            );
+
+            const pubKeyStr = pubKeys.values().next().value;
+            recipientPubK = Buffer.from(pubKeyStr, "base64");
+
+            pubKeys.delete(pubKeyStr);
+
+            console.log("Encrypting using ephemeral key");
+            console.log(
+              "You now have %s public keys for user %s",
+              this.currentRecipientPublicKeys.get(userId._idB58String).size,
+              userId._idB58String
+            );
+          } else {
+            // I don't have ephemeral keys, send a warning and use default public key
+            console.warn(
+              "You are out of ephemeral keys for user %s",
+              userId._idB58String
+            );
+            //TODO: Expand protocol to request ephemeral keys
+            recipientPubK = userId._pubKey._key;
+            console.log("Encrypting using public key");
+          }
+
+          //console.log(recipientPubK);
+
+          const fullMsg = {
+            senderId: this.peerInfo.id.toB58String(),
+            msgText: msgContent
+          };
+
+          const encodedMsgContent = pbm.MsgContent.encode(fullMsg).toString(
+            "base64"
+          );
+
+          console.log("ENCRYPTING USING KEY");
+          console.log(recipientPubK);
+          console.log("Encyrptinv message");
+          console.log(Buffer.from(msgContent));
+          eccrypto
+            .encrypt(recipientPubK, Buffer.from(msgContent, "utf-8"), {
+              ephemPrivateKey: privateKey
+            })
+            .then(encrypted => {
+              //console.log("Encrypted message");
+              encrypted.msgNonce = msgNonce;
+              console.log(encrypted);
+
+              const protoMsg = pbm.CypherText.encode(encrypted);
+              const content = Buffer.from(protoMsg);
+
+              const timeReceived = new Date();
+              let record = new libp2pRecord.Record(
+                userBuff,
+                content,
+                timeReceived
+              );
+
+              const msg = new Message(Message.TYPES.SEND_MSG, userBuff, 2);
+              msg.record = record;
+
+              each(
+                closest,
+                (peer, cb) => {
+                  this.network.sendMessage(peer, msg, err => {
+                    if (err) {
+                      console.log("Kad libp2p: Error sending message");
+                      errors.push(err);
+                    }
+                    cb();
+                  });
+                },
+                cb
+              );
+            });
         }
-        else{
-          peers = this.routingTable.closestPeers(dhtId, this.kBucketSize)
+      ],
+      err => {
+        if (err) console.log(err);
+
+        if (errors.length) {
+          // This should be infrequent. This means a peer we previously connected
+          // to failed to exchange the provide message. If getClosestPeers was an
+          // iterator, we could continue to pull until we announce to kBucketSize peers.
+          err = errcode(
+            `Failed to provide to ${errors.length} of ${this.kBucketSize} peers`,
+            "ERR_SOME_PROVIDES_FAILED",
+            { errors }
+          );
         }
-        cb(null, peers)
-      },
-      (closest, cb) => {
-        console.log("closest peers")
-        console.log(closest)
-        const content = Buffer.from(msgContent)
-        const timeReceived = new Date()
-        let record  = new libp2pRecord.Record(userBuff, content, timeReceived)
-
-        const msg = new Message(Message.TYPES.SEND_MSG, userBuff, 2)
-        msg.record = record
-
-        each(closest, (peer, cb) => {
-          //this._log('send message %s to %s', key.toBaseEncodedString(), peer.toB58String())
-          this.network.sendMessage(peer, msg, (err) => {
-
-            if (err) {
-              console.log("ERRROR SENDING")
-              errors.push(err)
-            }
-            cb()
-          })
-        }, cb)
+        callback(err);
       }
-    ], (err) => {
-      console.log(err)
-      if (errors.length) {
-        // This should be infrequent. This means a peer we previously connected
-        // to failed to exchange the provide message. If getClosestPeers was an
-        // iterator, we could continue to pull until we announce to kBucketSize peers.
-        err = errcode(`Failed to provide to ${errors.length} of ${this.kBucketSize} peers`, 'ERR_SOME_PROVIDES_FAILED', { errors })
-      }
-      callback(err)
-    })
+    );
   }
 
   // ----------- Content Routing
@@ -589,35 +711,53 @@ class KadDHT extends EventEmitter {
    * @param {function(Error)} callback
    * @returns {void}
    */
-  provide (key, callback) {
-    this._log('provide: %s', key.toBaseEncodedString())
+  provide(key, callback) {
+    this._log("provide: %s", key.toBaseEncodedString());
 
-    const errors = []
-    waterfall([
-      // TODO: refactor this in method in async and remove this wrapper
-      (cb) => promiseToCallback(this.providers.addProvider(key, this.peerInfo.id))(err => cb(err)),
-      (cb) => this.getClosestPeers(key.buffer, cb),
-      (peers, cb) => {
-        const msg = new Message(Message.TYPES.ADD_PROVIDER, key.buffer, 0)
-        msg.providerPeers = [this.peerInfo]
+    const errors = [];
+    waterfall(
+      [
+        // TODO: refactor this in method in async and remove this wrapper
+        cb =>
+          promiseToCallback(
+            this.providers.addProvider(key, this.peerInfo.id)
+          )(err => cb(err)),
+        cb => this.getClosestPeers(key.buffer, cb),
+        (peers, cb) => {
+          const msg = new Message(Message.TYPES.ADD_PROVIDER, key.buffer, 0);
+          msg.providerPeers = [this.peerInfo];
 
-        each(peers, (peer, cb) => {
-          this._log('putProvider %s to %s', key.toBaseEncodedString(), peer.toB58String())
-          this.network.sendMessage(peer, msg, (err) => {
-            if (err) errors.push(err)
-            cb()
-          })
-        }, cb)
+          each(
+            peers,
+            (peer, cb) => {
+              this._log(
+                "putProvider %s to %s",
+                key.toBaseEncodedString(),
+                peer.toB58String()
+              );
+              this.network.sendMessage(peer, msg, err => {
+                if (err) errors.push(err);
+                cb();
+              });
+            },
+            cb
+          );
+        }
+      ],
+      err => {
+        if (errors.length) {
+          // This should be infrequent. This means a peer we previously connected
+          // to failed to exchange the provide message. If getClosestPeers was an
+          // iterator, we could continue to pull until we announce to kBucketSize peers.
+          err = errcode(
+            `Failed to provide to ${errors.length} of ${this.kBucketSize} peers`,
+            "ERR_SOME_PROVIDES_FAILED",
+            { errors }
+          );
+        }
+        callback(err);
       }
-    ], (err) => {
-      if (errors.length) {
-        // This should be infrequent. This means a peer we previously connected
-        // to failed to exchange the provide message. If getClosestPeers was an
-        // iterator, we could continue to pull until we announce to kBucketSize peers.
-        err = errcode(`Failed to provide to ${errors.length} of ${this.kBucketSize} peers`, 'ERR_SOME_PROVIDES_FAILED', { errors })
-      }
-      callback(err)
-    })
+    );
   }
 
   /**
@@ -630,24 +770,30 @@ class KadDHT extends EventEmitter {
    * @param {function(Error, Array<PeerInfo>)} callback
    * @returns {void}
    */
-  findProviders (key, options, callback) {
-    if (typeof options === 'function') {
-      callback = options
-      options = {}
+  findProviders(key, options, callback) {
+    if (typeof options === "function") {
+      callback = options;
+      options = {};
     } else {
-      options = options || {}
+      options = options || {};
     }
 
     if (!options.maxTimeout && !options.timeout) {
-      options.timeout = c.minute // default
-    } else if (options.maxTimeout && !options.timeout) { // TODO this will be deprecated in a next release
-      options.timeout = options.maxTimeout
+      options.timeout = c.minute; // default
+    } else if (options.maxTimeout && !options.timeout) {
+      // TODO this will be deprecated in a next release
+      options.timeout = options.maxTimeout;
     }
 
-    options.maxNumProviders = options.maxNumProviders || c.K
+    options.maxNumProviders = options.maxNumProviders || c.K;
 
-    this._log('findProviders %s', key.toBaseEncodedString())
-    this._findNProviders(key, options.timeout, options.maxNumProviders, callback)
+    this._log("findProviders %s", key.toBaseEncodedString());
+    this._findNProviders(
+      key,
+      options.timeout,
+      options.maxNumProviders,
+      callback
+    );
   }
 
   // ----------- Peer Routing
@@ -661,100 +807,106 @@ class KadDHT extends EventEmitter {
    * @param {function(Error, PeerInfo)} callback
    * @returns {void}
    */
-  findPeer (id, options, callback) {
-    if (typeof options === 'function') {
-      callback = options
-      options = {}
+  findPeer(id, options, callback) {
+    if (typeof options === "function") {
+      callback = options;
+      options = {};
     } else {
-      options = options || {}
+      options = options || {};
     }
 
     if (!options.maxTimeout && !options.timeout) {
-      options.timeout = c.minute // default
-    } else if (options.maxTimeout && !options.timeout) { // TODO this will be deprecated in a next release
-      options.timeout = options.maxTimeout
+      options.timeout = c.minute; // default
+    } else if (options.maxTimeout && !options.timeout) {
+      // TODO this will be deprecated in a next release
+      options.timeout = options.maxTimeout;
     }
 
-    this._log('findPeer %s', id.toB58String())
+    this._log("findPeer %s", id.toB58String());
 
     this.findPeerLocal(id, (err, pi) => {
       if (err) {
-        return callback(err)
+        return callback(err);
       }
 
       // already got it
       if (pi != null) {
-        this._log('found local')
-        return callback(null, pi)
+        this._log("found local");
+        return callback(null, pi);
       }
 
-      waterfall([
-        (cb) => utils.convertPeerId(id, cb),
-        (key, cb) => {
-          const peers = this.routingTable.closestPeers(key, this.kBucketSize)
+      waterfall(
+        [
+          cb => utils.convertPeerId(id, cb),
+          (key, cb) => {
+            const peers = this.routingTable.closestPeers(key, this.kBucketSize);
 
-          if (peers.length === 0) {
-            return cb(errcode(new Error('Peer lookup failed'), 'ERR_LOOKUP_FAILED'))
-          }
+            if (peers.length === 0) {
+              return cb(
+                errcode(new Error("Peer lookup failed"), "ERR_LOOKUP_FAILED")
+              );
+            }
 
-          // sanity check
-          const match = peers.find((p) => p.isEqual(id))
-          if (match && this.peerBook.has(id)) {
-            this._log('found in peerbook')
-            return cb(null, this.peerBook.get(id))
-          }
+            // sanity check
+            const match = peers.find(p => p.isEqual(id));
+            if (match && this.peerBook.has(id)) {
+              this._log("found in peerbook");
+              return cb(null, this.peerBook.get(id));
+            }
 
-          // query the network
-          const query = new Query(this, id.id, () => {
-            // There is no distinction between the disjoint paths,
-            // so there are no per-path variables in this scope.
-            // Just return the actual query function.
-            return async (peer) => {
-              const msg = await this._findPeerSingleAsync(peer, id)
-              const match = msg.closerPeers.find((p) => p.id.isEqual(id))
+            // query the network
+            const query = new Query(this, id.id, () => {
+              // There is no distinction between the disjoint paths,
+              // so there are no per-path variables in this scope.
+              // Just return the actual query function.
+              return async peer => {
+                const msg = await this._findPeerSingleAsync(peer, id);
+                const match = msg.closerPeers.find(p => p.id.isEqual(id));
 
-              // found it
-              if (match) {
-                return {
-                  peer: match,
-                  queryComplete: true
+                // found it
+                if (match) {
+                  return {
+                    peer: match,
+                    queryComplete: true
+                  };
                 }
-              }
 
-              return {
-                closerPeers: msg.closerPeers
-              }
-            }
-          })
+                return {
+                  closerPeers: msg.closerPeers
+                };
+              };
+            });
 
-          timeout((_cb) => {
-            promiseToCallback(query.run(peers))(_cb)
-          }, options.timeout)((err, res) => {
-            query.stop()
-            cb(err, res)
-          })
-        },
-        (result, cb) => {
-          let success = false
-          result.paths.forEach((result) => {
-            if (result.success) {
-              success = true
-              this.peerBook.put(result.peer)
+            timeout(_cb => {
+              promiseToCallback(query.run(peers))(_cb);
+            }, options.timeout)((err, res) => {
+              query.stop();
+              cb(err, res);
+            });
+          },
+          (result, cb) => {
+            let success = false;
+            result.paths.forEach(result => {
+              if (result.success) {
+                success = true;
+                this.peerBook.put(result.peer);
+              }
+            });
+            this._log("findPeer %s: %s", id.toB58String(), success);
+            if (!success) {
+              return cb(errcode(new Error("No peer found"), "ERR_NOT_FOUND"));
             }
-          })
-          this._log('findPeer %s: %s', id.toB58String(), success)
-          if (!success) {
-            return cb(errcode(new Error('No peer found'), 'ERR_NOT_FOUND'))
+            cb(null, this.peerBook.get(id));
           }
-          cb(null, this.peerBook.get(id))
-        }
-      ], callback)
-    })
+        ],
+        callback
+      );
+    });
   }
 
-  _peerDiscovered (peerInfo) {
-    this.emit('peer', peerInfo)
+  _peerDiscovered(peerInfo) {
+    this.emit("peer", peerInfo);
   }
 }
 
-module.exports = KadDHT
+module.exports = KadDHT;
