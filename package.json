@@ -48,7 +48,7 @@
     "hashlru": "^2.3.0",
     "heap": "~0.2.6",
     "interface-datastore": "~0.7.0",
-    "k-bucket": "^5.0.0",
+    "k-bucket": "rootstock/k-bucket#stable",
     "libp2p-crypto": "~0.16.1",
     "libp2p-record": "~0.6.2",
     "multihashes": "~0.4.14",
