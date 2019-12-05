@@ -25,12 +25,12 @@ module.exports = dht => {
   return function sendMessage(peer, msg, callback) {
     log("start");
 
-    console.log("your dht object private keys");
+    /*console.log("your dht object private keys");
     console.log(dht.currentPrivateKeys);
     console.log("your default private key is");
     console.log(dht.peerInfo.id._privKey._key);
     console.log("The corresponding public key is");
-    console.log(dht.peerInfo.id._pubKey._key);
+    console.log(dht.peerInfo.id._pubKey._key);*/
 
     //Try to decrypt message with all my current ephemeral private keys, or, in none work, my default private key
 
@@ -38,7 +38,6 @@ module.exports = dht => {
 
     //decode encrypted message
     const decodedMsg = pbm.CypherText.decode(msg.record.value);
-    console.log(decodedMsg);
 
     for (const privKeyStr of dht.currentPrivateKeys.values()) {
       const privKey = Buffer.from(privKeyStr, "base64");
@@ -48,9 +47,8 @@ module.exports = dht => {
           decryptSuccess = true;
           dht.currentPrivateKeys.delete(privKeyStr); //If a private key was successfully used to decrypt, then the node discards it
           //Save ephemeral public key to be used with this contact
-          console.log("Decoding plaintext");
           const decodedMsgObject = pbm.MsgContent.decode(plaintext);
-          console.log(decodedMsgObject);
+
           const pubKey = decodedMsg.ephemPublicKey.toString("base64");
           if (!dht.currentRecipientPublicKeys.has(decodedMsgObject.senderId)) {
             dht.currentRecipientPublicKeys.set(
@@ -68,7 +66,8 @@ module.exports = dht => {
           dht.currentRecipientPublicKeys
             .get(decodedMsgObject.senderId)
             .add(pubKey);
-          dht.emit("kad-msg-received", decodedMsgObject.msgText.toString());
+
+          dht.emit("kad-msg-received", {sender: decodedMsgObject.senderId, msg:decodedMsgObject.msgText.toString()});
         },
         () => {
           //Placeholder for any decryption failure log
@@ -82,17 +81,11 @@ module.exports = dht => {
     if (!decryptSuccess) {
       eccrypto.decrypt(dht.peerInfo.id._privKey._key, decodedMsg).then(
         function(plaintext) {
+          
           //Save ephemeral public key to be used with this contact
+          const decodedMsgObject = pbm.MsgContent.decode(plaintext);
+
           const pubKey = decodedMsg.ephemPublicKey.toString("base64");
-          console.log("Decoding plaintext");
-
-          //const decodedMsgObject = pbm.MsgContent.decode(Buffer.from);
-          const decodedMsgObject = {
-            senderId: "lala",
-            msgText: plaintext
-          };
-          console.log(decodedMsgObject);
-
           if (!dht.currentRecipientPublicKeys.has(decodedMsgObject.senderId)) {
             dht.currentRecipientPublicKeys.set(
               decodedMsgObject.senderId,
@@ -109,7 +102,8 @@ module.exports = dht => {
             .get(decodedMsgObject.senderId)
             .add(pubKey);
 
-          dht.emit("kad-msg-received", decodedMsgObject.msgText.toString());
+          dht.emit("kad-msg-received", {sender: decodedMsgObject.senderId, msg:decodedMsgObject.msgText.toString()});
+
         },
         error => {
           console.log("Received message was not for me");

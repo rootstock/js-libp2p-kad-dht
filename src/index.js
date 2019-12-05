@@ -638,22 +638,14 @@ class KadDHT extends EventEmitter {
             msgText: msgContent
           };
 
-          const encodedMsgContent = pbm.MsgContent.encode(fullMsg).toString(
-            "base64"
-          );
+          const encodedMsgContent = pbm.MsgContent.encode(fullMsg);
 
-          console.log("ENCRYPTING USING KEY");
-          console.log(recipientPubK);
-          console.log("Encyrptinv message");
-          console.log(Buffer.from(msgContent));
           eccrypto
-            .encrypt(recipientPubK, Buffer.from(msgContent, "utf-8"), {
+            .encrypt(recipientPubK, encodedMsgContent, {
               ephemPrivateKey: privateKey
             })
             .then(encrypted => {
-              //console.log("Encrypted message");
               encrypted.msgNonce = msgNonce;
-              console.log(encrypted);
 
               const protoMsg = pbm.CypherText.encode(encrypted);
               const content = Buffer.from(protoMsg);
