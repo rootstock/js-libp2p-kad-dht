@@ -40,6 +40,7 @@ module.exports = dht => {
     const decodedMsg = pbm.CypherText.decode(msg.record.value);
 
     for (const privKeyStr of dht.currentPrivateKeys.values()) {
+      console.log("trying to decrypt using private ephemeral keys");
       const privKey = Buffer.from(privKeyStr, "base64");
 
       eccrypto.decrypt(privKey, decodedMsg).then(
@@ -74,11 +75,13 @@ module.exports = dht => {
         }
       );
       if (decryptSuccess) {
+        console.log("Successfully decrypted with ephemeral key")
         break;
       }
     }
 
     if (!decryptSuccess) {
+      console.log("Trying to decrypt using default private key")
       eccrypto.decrypt(dht.peerInfo.id._privKey._key, decodedMsg).then(
         function(plaintext) {
           

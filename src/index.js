@@ -630,11 +630,13 @@ class KadDHT extends EventEmitter {
             recipientPubK = userId._pubKey._key;
             console.log("Encrypting using public key");
           }
-
-          //console.log(recipientPubK);
-
+          
+           const pubKeyStr = crypto.keys
+              .marshalPublicKey(this.peerInfo.id.pubKey, "secp256k1")
+              .toString("base64");
+          
           const fullMsg = {
-            senderId: this.peerInfo.id.toB58String(),
+            senderId: pubKeyStr,
             msgText: msgContent
           };
 
