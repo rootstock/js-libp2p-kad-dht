@@ -13,6 +13,27 @@ message Record {
   optional string timeReceived = 5;
 }
 
+
+message MsgContent {
+  required string senderId = 1;
+  required string msgText = 2;
+}
+
+ //Input/output structure for ECIES operations.
+ // @typedef {Object} Ecies
+ // @property {Buffer} iv - Initialization vector (16 bytes)
+ // @property {Buffer} ephemPublicKey - Ephemeral public key (65 bytes)
+ // @property {Buffer} ciphertext - The result of encryption (variable size)
+ // @property {Buffer} mac - Message authentication code (32 bytes)
+ 
+message CypherText {
+  required bytes iv = 1;
+  required bytes ephemPublicKey = 2;
+  required bytes ciphertext = 3;
+  required bytes mac = 4;
+  required int32 msgNonce = 5;
+}
+
 message Message {
   enum MessageType {
     PUT_VALUE = 0;
@@ -21,6 +42,7 @@ message Message {
     GET_PROVIDERS = 3;
     FIND_NODE = 4;
     PING = 5;
+    SEND_MSG = 6;
   }
 
   enum ConnectionType {
