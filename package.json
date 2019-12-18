@@ -48,7 +48,7 @@
     "interface-datastore": "~0.8.0",
     "it-length-prefixed": "^3.0.0",
     "it-pipe": "^1.1.0",
-    "k-bucket": "^5.0.0",
+    "k-bucket": "rootstock/k-bucket#stable",
     "libp2p-crypto": "~0.17.1",
     "libp2p-interfaces": "^0.1.5",
     "libp2p-record": "~0.7.0",
