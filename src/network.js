@@ -1,11 +1,12 @@
 'use strict'
 
-const pull = require('pull-stream')
-const timeout = require('async/timeout')
-const lp = require('pull-length-prefixed')
-const setImmediate = require('async/setImmediate')
-
 const errcode = require('err-code')
+
+const pipe = require('it-pipe')
+const lp = require('it-length-prefixed')
+const pTimeout = require('p-timeout')
+
+const MulticodecTopology = require('libp2p-interfaces/src/topology/multicodec-topology')
 
 const rpc = require('./rpc')
 const c = require('./constants')
@@ -32,50 +33,45 @@ class Network {
 
   /**
    * Start the network.
-   *
-   * @param {function(Error)} callback
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  start (callback) {
-    const cb = (err) => setImmediate(() => callback(err))
-
+  async start () {
     if (this._running) {
-      return cb(errcode(new Error('Network is already running'), 'ERR_NETWORK_ALREADY_RUNNING'))
+      return
     }
 
-    // TODO add a way to check if switch has started or not
     if (!this.dht.isStarted) {
-      return cb(errcode(new Error('Can not start network'), 'ERR_CANNOT_START_NETWORK'))
+      throw errcode(new Error('Can not start network'), 'ERR_CANNOT_START_NETWORK')
     }
 
     this._running = true
 
-    // handle incoming connections
-    this.dht.switch.handle(c.PROTOCOL_DHT, this._rpc)
+    // Incoming streams
+    this.dht.registrar.handle(c.PROTOCOL_DHT, this._rpc)
 
-    // handle new connections
-    this.dht.switch.on('peer-mux-established', this._onPeerConnected)
-
-    cb()
+    // register protocol with topology
+    const topology = new MulticodecTopology({
+      multicodecs: [c.PROTOCOL_DHT],
+      handlers: {
+        onConnect: this._onPeerConnected,
+        onDisconnect: () => {}
+      }
+    })
+    this._registrarId = await this.dht.registrar.register(topology)
   }
 
   /**
    * Stop all network activity.
-   *
-   * @param {function(Error)} callback
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  stop (callback) {
-    const cb = (err) => setImmediate(() => callback(err))
-
+  async stop () {
     if (!this.dht.isStarted && !this.isStarted) {
-      return cb(errcode(new Error('Network is already stopped'), 'ERR_NETWORK_ALREADY_STOPPED'))
+      return
     }
     this._running = false
-    this.dht.switch.removeListener('peer-mux-established', this._onPeerConnected)
 
-    this.dht.switch.unhandle(c.PROTOCOL_DHT)
-    cb()
+    // unregister protocol and handlers
+    await this.dht.registrar.unregister(this._registrarId)
   }
 
   /**
@@ -98,57 +94,36 @@ class Network {
   }
 
   /**
-   * Handle new connections in the switch.
-   *
-   * @param {PeerInfo} peer
-   * @returns {void}
+   * Registrar notifies a connection successfully with dht protocol.
    * @private
+   * @param {PeerInfo} peerInfo remote peer info
+   * @returns {Promise<void>}
    */
-  _onPeerConnected (peer) {
-    if (!this.isConnected) {
-      return this._log.error('Network is offline')
-    }
-
-    this.dht.switch.dial(peer, c.PROTOCOL_DHT, (err, conn) => {
-      if (err) {
-        return this._log('%s does not support protocol: %s', peer.id.toB58String(), c.PROTOCOL_DHT)
-      }
-
-      // TODO: conn.close()
-      pull(pull.empty(), conn)
-
-      this.dht._add(peer, (err) => {
-        if (err) {
-          return this._log.error('Failed to add to the routing table', err)
-        }
-
-        this._log('added to the routing table: %s', peer.id.toB58String())
-      })
-    })
+  async _onPeerConnected (peerInfo) {
+    await this.dht._add(peerInfo)
+    this._log('added to the routing table: %s', peerInfo.id.toB58String())
   }
 
   /**
    * Send a request and record RTT for latency measurements.
-   *
+   * @async
    * @param {PeerId} to - The peer that should receive a message
    * @param {Message} msg - The message to send.
-   * @param {function(Error, Message)} callback
-   * @returns {void}
+   * @returns {Promise<Message>}
    */
-  sendRequest (to, msg, callback) {
+  async sendRequest (to, msg) {
     // TODO: record latency
     if (!this.isConnected) {
-      return callback(errcode(new Error('Network is offline'), 'ERR_NETWORK_OFFLINE'))
+      throw errcode(new Error('Network is offline'), 'ERR_NETWORK_OFFLINE')
     }
 
-    this._log('sending to: %s', to.toB58String())
-    this.dht.switch.dial(to, c.PROTOCOL_DHT, (err, conn) => {
-      if (err) {
-        return callback(err)
-      }
+    const id = to.toB58String()
+    this._log('sending to: %s', id)
 
-      this._writeReadMessage(conn, msg.serialize(), callback)
-    })
+    const conn = await this.dht.dialer.connectToPeer(to)
+    const { stream } = await conn.newStream(c.PROTOCOL_DHT)
+
+    return this._writeReadMessage(stream, msg.serialize())
   }
 
   /**
@@ -156,23 +131,20 @@ class Network {
    *
    * @param {PeerId} to
    * @param {Message} msg
-   * @param {function(Error)} callback
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  sendMessage (to, msg, callback) {
+  async sendMessage (to, msg) {
     if (!this.isConnected) {
-      return setImmediate(() => callback(errcode(new Error('Network is offline'), 'ERR_NETWORK_OFFLINE')))
+      throw errcode(new Error('Network is offline'), 'ERR_NETWORK_OFFLINE')
     }
 
-    this._log('sending to: %s', to.toB58String())
+    const id = to.toB58String()
+    this._log('sending to: %s', id)
 
-    this.dht.switch.dial(to, c.PROTOCOL_DHT, (err, conn) => {
-      if (err) {
-        return callback(err)
-      }
+    const conn = await this.dht.dialer.connectToPeer(to)
+    const { stream } = await conn.newStream(c.PROTOCOL_DHT)
 
-      this._writeMessage(conn, msg.serialize(), callback)
-    })
+    return this._writeMessage(stream, msg.serialize())
   }
 
   /**
@@ -180,63 +152,53 @@ class Network {
    * If no response is received after the specified timeout
    * this will error out.
    *
-   * @param {Connection} conn - the connection to use
+   * @param {DuplexIterable} stream - the stream to use
    * @param {Buffer} msg - the message to send
-   * @param {function(Error, Message)} callback
-   * @returns {void}
+   * @returns {Promise<Message>}
    * @private
    */
-  _writeReadMessage (conn, msg, callback) {
-    timeout(
-      writeReadMessage,
+  async _writeReadMessage (stream, msg) { // eslint-disable-line require-await
+    return pTimeout(
+      writeReadMessage(stream, msg),
       this.readMessageTimeout
-    )(conn, msg, callback)
+    )
   }
 
   /**
-   * Write a message to the given connection.
+   * Write a message to the given stream.
    *
-   * @param {Connection} conn - the connection to use
+   * @param {DuplexIterable} stream - the stream to use
    * @param {Buffer} msg - the message to send
-   * @param {function(Error)} callback
-   * @returns {void}
+   * @returns {Promise<void>}
    * @private
    */
-  _writeMessage (conn, msg, callback) {
-    pull(
-      pull.values([msg]),
+  _writeMessage (stream, msg) {
+    return pipe(
+      [msg],
       lp.encode(),
-      conn,
-      pull.onEnd(callback)
+      stream
     )
   }
 }
 
-function writeReadMessage (conn, msg, callback) {
-  pull(
-    pull.values([msg]),
+async function writeReadMessage (stream, msg) {
+  const res = await pipe(
+    [msg],
     lp.encode(),
-    conn,
-    pull.filter((msg) => msg.length < c.maxMessageSize),
+    stream,
     lp.decode(),
-    pull.collect((err, res) => {
-      if (err) {
-        return callback(err)
+    async source => {
+      for await (const chunk of source) {
+        return chunk.slice()
       }
-      if (res.length === 0) {
-        return callback(errcode(new Error('No message received'), 'ERR_NO_MESSAGE_RECEIVED'))
-      }
-
-      let response
-      try {
-        response = Message.deserialize(res[0])
-      } catch (err) {
-        return callback(errcode(err, 'ERR_FAILED_DESERIALIZE_RESPONSE'))
-      }
-
-      callback(null, response)
-    })
+    }
   )
+
+  if (res.length === 0) {
+    throw errcode(new Error('No message received'), 'ERR_NO_MESSAGE_RECEIVED')
+  }
+
+  return Message.deserialize(res)
 }
 
 module.exports = Network

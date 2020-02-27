@@ -17,22 +17,21 @@ class RoutingTable {
     this.self = self
     this._onPing = this._onPing.bind(this)
 
-    utils.convertPeerId(self, (err, selfKey) => {
-      if (err) {
-        throw err
-      }
-
-      this.kb = new KBucket({
-        localNodeId: selfKey,
-        numberOfNodesPerKBucket: kBucketSize,
-        numberOfNodesToPing: 1
-      })
-
-      this.kb.on('ping', this._onPing)
-    })
+    this._onInit(kBucketSize)
   }
 
   // -- Private Methods
+  async _onInit (kBucketSize) {
+    const selfKey = await utils.convertPeerId(this.self)
+
+    this.kb = new KBucket({
+      localNodeId: selfKey,
+      numberOfNodesPerKBucket: kBucketSize,
+      numberOfNodesToPing: 1
+    })
+
+    this.kb.on('ping', this._onPing)
+  }
 
   /**
    * Called on the `ping` event from `k-bucket`.
@@ -72,32 +71,24 @@ class RoutingTable {
    * Find a specific peer by id.
    *
    * @param {PeerId} peer
-   * @param {function(Error, PeerId)} callback
-   * @returns {void}
+   * @returns {Promise<PeerId>}
    */
-  find (peer, callback) {
-    utils.convertPeerId(peer, (err, key) => {
-      if (err) {
-        return callback(err)
-      }
-      const closest = this.closestPeer(key)
+  async find (peer) {
+    const key = await utils.convertPeerId(peer)
+    const closest = this.closestPeer(key)
 
-      if (closest && closest.isEqual(peer)) {
-        return callback(null, closest)
-      }
-
-      callback()
-    })
+    if (closest && closest.isEqual(peer)) {
+      return closest
+    }
   }
 
   /**
    * Retrieve the closest peers to the given key.
    *
    * @param {Buffer} key
-   * @param {number} count
    * @returns {PeerId|undefined}
    */
-  closestPeer (key, count) {
+  closestPeer (key) {
     const res = this.closestPeers(key, 1)
     if (res.length > 0) {
       return res[0]
@@ -115,49 +106,28 @@ class RoutingTable {
     return this.kb.closest(key, count).map((p) => p.peer)
   }
 
-   /**
-   * Retrieve the `count`-closest peers to the given partial/ofuscated key.
-   *
-   * @param {Buffer} key
-   * @param {number} count
-   * @returns {Array<PeerId>}
-   */
-  closestPeersPartial (key, count) {
-    return this.kb.closestPartial(key, count).map((p) => p.peer)
-  }
-
   /**
    * Add or update the routing table with the given peer.
    *
    * @param {PeerId} peer
-   * @param {function(Error)} callback
-   * @returns {undefined}
+   * @returns {Promise<void>}
    */
-  add (peer, callback) {
-    utils.convertPeerId(peer, (err, id) => {
-      if (err) {
-        return callback(err)
-      }
-      this.kb.add({ id: id, peer: peer })
-      callback()
-    })
+  async add (peer) {
+    const id = await utils.convertPeerId(peer)
+
+    this.kb.add({ id: id, peer: peer })
   }
 
   /**
    * Remove a given peer from the table.
    *
    * @param {PeerId} peer
-   * @param {function(Error)} callback
-   * @returns {undefined}
+   * @returns {Promise<void>}
    */
-  remove (peer, callback) {
-    utils.convertPeerId(peer, (err, id) => {
-      if (err) {
-        return callback(err)
-      }
-      this.kb.remove(id)
-      callback()
-    })
+  async remove (peer) {
+    const id = await utils.convertPeerId(peer)
+
+    this.kb.remove(id)
   }
 }
 

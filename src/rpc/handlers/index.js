@@ -9,8 +9,7 @@ module.exports = (dht) => {
     [T.FIND_NODE]: require('./find-node')(dht),
     [T.ADD_PROVIDER]: require('./add-provider')(dht),
     [T.GET_PROVIDERS]: require('./get-providers')(dht),
-    [T.PING]: require('./ping')(dht),
-    [T.SEND_MSG]: require('./send-msg')(dht)
+    [T.PING]: require('./ping')(dht)
   }
 
   /**

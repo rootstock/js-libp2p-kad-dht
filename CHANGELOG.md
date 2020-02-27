@@ -1,3 +1,95 @@
+<a name="0.18.5"></a>
+## [0.18.5](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.18.4...v0.18.5) (2020-02-14)
+
+
+### Bug Fixes
+
+* remove use of assert module ([#173](https://github.com/libp2p/js-libp2p-kad-dht/issues/173)) ([de85eb6](https://github.com/libp2p/js-libp2p-kad-dht/commit/de85eb6))
+
+
+
+<a name="0.18.4"></a>
+## [0.18.4](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.18.3...v0.18.4) (2020-02-05)
+
+
+
+<a name="0.18.3"></a>
+## [0.18.3](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.18.2...v0.18.3) (2019-12-12)
+
+
+### Bug Fixes
+
+* dont use peer ids in sets ([#165](https://github.com/libp2p/js-libp2p-kad-dht/issues/165)) ([e12e540](https://github.com/libp2p/js-libp2p-kad-dht/commit/e12e540))
+
+
+
+<a name="0.18.2"></a>
+## [0.18.2](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.18.1...v0.18.2) (2019-12-06)
+
+
+### Bug Fixes
+
+* get many should not fail if found locally ([#161](https://github.com/libp2p/js-libp2p-kad-dht/issues/161)) ([091db13](https://github.com/libp2p/js-libp2p-kad-dht/commit/091db13))
+
+
+
+<a name="0.18.1"></a>
+## [0.18.1](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.18.0...v0.18.1) (2019-12-05)
+
+
+### Bug Fixes
+
+* find providers should yield when found locally ([#160](https://github.com/libp2p/js-libp2p-kad-dht/issues/160)) ([e40834a](https://github.com/libp2p/js-libp2p-kad-dht/commit/e40834a))
+
+
+
+<a name="0.18.0"></a>
+# [0.18.0](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.17.1...v0.18.0) (2019-11-30)
+
+
+### Features
+
+* find providers and closest peers return async iterable ([#157](https://github.com/libp2p/js-libp2p-kad-dht/issues/157)) ([f0e6800](https://github.com/libp2p/js-libp2p-kad-dht/commit/f0e6800))
+
+
+### BREAKING CHANGES
+
+* API for find providers and closest peers return async iterable instead of an array of PeerInfo
+
+
+
+<a name="0.17.1"></a>
+## [0.17.1](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.17.0...v0.17.1) (2019-11-28)
+
+
+### Bug Fixes
+
+* remove extraneous message size filter ([#156](https://github.com/libp2p/js-libp2p-kad-dht/issues/156)) ([58b6b36](https://github.com/libp2p/js-libp2p-kad-dht/commit/58b6b36))
+
+
+
+<a name="0.17.0"></a>
+# [0.17.0](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.16.1...v0.17.0) (2019-11-26)
+
+
+### Bug Fixes
+
+* stop and start should not fail ([#152](https://github.com/libp2p/js-libp2p-kad-dht/issues/152)) ([eee2f61](https://github.com/libp2p/js-libp2p-kad-dht/commit/eee2f61))
+
+
+### Code Refactoring
+
+* async await ([#148](https://github.com/libp2p/js-libp2p-kad-dht/issues/148)) ([c49fa92](https://github.com/libp2p/js-libp2p-kad-dht/commit/c49fa92))
+
+
+### BREAKING CHANGES
+
+* Switch to using async/await and async iterators.
+
+Co-Authored-By: Jacob Heun <jacobheun@gmail.com>
+
+
+
 <a name="0.16.1"></a>
 ## [0.16.1](https://github.com/libp2p/js-libp2p-kad-dht/compare/v0.16.0...v0.16.1) (2019-10-21)
 

@@ -1,6 +1,6 @@
 'use strict'
 
-const PeerQueue = require('../peer-queue')
+const PeerQueue = require('../peer-list/peer-queue')
 const utils = require('../utils')
 
 // TODO: Temporary until parallel dial in Switch have a proper
@@ -38,7 +38,6 @@ class Path {
 
   /**
    * Add a peer to the set of peers that are used to intialize the path.
-   *
    * @param {PeerId} peer
    */
   addInitialPeer (peer) {
@@ -74,7 +73,7 @@ class Path {
 
     // The paths must be disjoint, meaning that no two paths in the Query may
     // traverse the same peer
-    if (this.run.peersSeen.has(peer)) {
+    if (this.run.peersSeen.has(peer.toB58String())) {
       return
     }
 

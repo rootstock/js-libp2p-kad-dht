@@ -8,7 +8,12 @@ const expect = chai.expect
 const sinon = require('sinon')
 const RandomWalk = require('../src/random-walk')
 const { defaultRandomWalk } = require('../src/constants')
-const { AssertionError } = require('assert')
+
+const TestDHT = require('./utils/test-dht')
+const {
+  bootstrap,
+  waitForWellFormedTables
+} = require('./utils')
 
 describe('Random Walk', () => {
   const mockDHT = {
@@ -17,7 +22,10 @@ describe('Random Walk', () => {
         toB58String: () => 'QmRLoXS3E73psYaUsma1VSbboTa2J8Z9kso1tpiGLk9WQ4'
       }
     },
-    findPeer: () => {}
+    findPeer: () => {},
+    _log: {
+      error: () => {}
+    }
   }
 
   afterEach(() => {
@@ -26,7 +34,7 @@ describe('Random Walk', () => {
 
   describe('configuration', () => {
     it('should use require a dht', () => {
-      expect(() => new RandomWalk()).to.throw(AssertionError)
+      expect(() => new RandomWalk()).to.throw()
     })
 
     it('should use defaults', () => {
@@ -65,8 +73,7 @@ describe('Random Walk', () => {
       const queries = 5
       const error = new Error('ERR_BOOM')
       const findPeerStub = sinon.stub(randomWalk._kadDHT, 'findPeer')
-      findPeerStub.onCall(2).callsArgWith(2, error)
-      findPeerStub.callsArgWith(2, { code: 'ERR_NOT_FOUND' })
+      findPeerStub.throws(error)
 
       let err
       try {
@@ -89,7 +96,9 @@ describe('Random Walk', () => {
     })
 
     it('should pass its timeout to the find peer query', async () => {
-      sinon.stub(randomWalk._kadDHT, 'findPeer').callsArgWith(2, { code: 'ERR_NOT_FOUND' })
+      const error = new Error()
+      error.code = 'ERR_NOT_FOUND'
+      sinon.stub(randomWalk._kadDHT, 'findPeer').throws(error)
 
       await randomWalk._walk(1, 111)
       const mockCalls = randomWalk._kadDHT.findPeer.getCalls()
@@ -192,9 +201,10 @@ describe('Random Walk', () => {
       }
       const error = { code: 'ERR_NOT_FOUND' }
       const randomWalk = new RandomWalk(mockDHT, options)
-      sinon.stub(randomWalk._kadDHT, 'findPeer').callsFake((_, opts, callback) => {
+      sinon.stub(randomWalk._kadDHT, 'findPeer').callsFake((_, opts) => {
         expect(opts.timeout).to.eql(options.timeout).mark()
-        setTimeout(() => callback(error), 100)
+
+        throw error
       })
 
       expect(3).checks(() => {
@@ -248,5 +258,25 @@ describe('Random Walk', () => {
 
       randomWalk.start()
     })
+  })
+
+  it('manual operation', async function () {
+    const timeout = 20 * 1000
+    this.timeout(timeout)
+
+    const nDHTs = 20
+    const tdht = new TestDHT()
+
+    // random walk disabled for a manual usage
+    const dhts = await tdht.spawn(nDHTs)
+
+    await Promise.all(
+      Array.from({ length: nDHTs }).map((_, i) => tdht.connect(dhts[i], dhts[(i + 1) % nDHTs]))
+    )
+
+    bootstrap(dhts)
+    await waitForWellFormedTables(dhts, 7, 0, timeout)
+
+    return tdht.teardown()
   })
 })

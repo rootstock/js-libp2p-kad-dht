@@ -1,10 +1,8 @@
 'use strict'
 
-const promisify = require('promisify-es6')
 const crypto = require('libp2p-crypto')
-const multihashing = promisify(require('multihashing-async'))
+const multihashing = require('multihashing-async')
 const PeerId = require('peer-id')
-const assert = require('assert')
 const AbortController = require('abort-controller')
 const errcode = require('err-code')
 const times = require('p-times')
@@ -24,9 +22,16 @@ class RandomWalk {
    * @param {DHT} options.dht
    */
   constructor (dht, options) {
-    assert(dht, 'Random Walk needs an instance of the Kademlia DHT')
-    this._options = { ...c.defaultRandomWalk, ...options }
+    if (!dht) {
+      throw new Error('Random Walk needs an instance of the Kademlia DHT')
+    }
+
     this._kadDHT = dht
+    this._options = {
+      ...c.defaultRandomWalk,
+      ...options
+    }
+
     this.log = logger(dht.peerInfo.id, 'random-walk')
     this._timeoutId = undefined
   }
@@ -147,7 +152,7 @@ class RandomWalk {
 
     let peer
     try {
-      peer = await promisify(cb => this._kadDHT.findPeer(id, options, cb))()
+      peer = await this._kadDHT.findPeer(id, options)
     } catch (err) {
       if (err && err.code === 'ERR_NOT_FOUND') {
         // expected case, we asked for random stuff after all
