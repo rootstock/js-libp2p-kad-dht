@@ -53,7 +53,7 @@ class KadDHT extends EventEmitter {
    * @param {object} props.selectors selectors object with namespace as keys and function(key, records)
    * @param {randomWalkOptions} options.randomWalk randomWalk options
    */
-  constructor ({
+  constructor({
     dialer,
     peerInfo,
     peerStore,
@@ -176,7 +176,7 @@ class KadDHT extends EventEmitter {
    * Is this DHT running.
    * @type {bool}
    */
-  get isStarted () {
+  get isStarted() {
     return this._running
   }
 
@@ -184,7 +184,7 @@ class KadDHT extends EventEmitter {
    * Start listening to incoming connections.
    * @returns {Promise<void>}
    */
-  async start () {
+  async start() {
     this._running = true
     this._queryManager.start()
     await this.network.start()
@@ -198,7 +198,7 @@ class KadDHT extends EventEmitter {
    * messages.
    * @returns {Promise<void>}
    */
-  stop () {
+  stop() {
     this._running = false
     this.randomWalk.stop()
     this.providers.stop()
@@ -214,7 +214,7 @@ class KadDHT extends EventEmitter {
    * @param {number} [options.minPeers] - minimum number of peers required to successfully put (default: closestPeers.length)
    * @returns {Promise<void>}
    */
-  async put (key, value, options = {}) { // eslint-disable-line require-await
+  async put(key, value, options = {}) { // eslint-disable-line require-await
     return this.contentFetching.put(key, value, options)
   }
 
@@ -226,7 +226,7 @@ class KadDHT extends EventEmitter {
    * @param {number} [options.timeout] - optional timeout (default: 60000)
    * @returns {Promise<Buffer>}
    */
-  async get (key, options = {}) { // eslint-disable-line require-await
+  async get(key, options = {}) { // eslint-disable-line require-await
     return this.contentFetching.get(key, options)
   }
 
@@ -238,7 +238,7 @@ class KadDHT extends EventEmitter {
    * @param {number} [options.timeout] - optional timeout (default: 60000)
    * @returns {Promise<Array<{from: PeerId, val: Buffer}>>}
    */
-  async getMany (key, nvals, options = {}) { // eslint-disable-line require-await
+  async getMany(key, nvals, options = {}) { // eslint-disable-line require-await
     return this.contentFetching.getMany(key, nvals, options)
   }
 
@@ -249,7 +249,7 @@ class KadDHT extends EventEmitter {
    * @param {CID} key
    * @returns {Promise<void>}
    */
-  async provide (key) { // eslint-disable-line require-await
+  async provide(key) { // eslint-disable-line require-await
     return this.contentRouting.provide(key)
   }
 
@@ -261,7 +261,7 @@ class KadDHT extends EventEmitter {
    * @param {number} options.maxNumProviders - maximum number of providers to find
    * @returns {AsyncIterable<PeerInfo>}
    */
-  async * findProviders (key, options = {}) {
+  async * findProviders(key, options = {}) {
     for await (const pInfo of this.contentRouting.findProviders(key, options)) {
       yield pInfo
     }
@@ -277,7 +277,7 @@ class KadDHT extends EventEmitter {
    * @param {number} options.timeout - how long the query should maximally run, in milliseconds (default: 60000)
    * @returns {Promise<PeerInfo>}
    */
-  async findPeer (id, options = {}) { // eslint-disable-line require-await
+  async findPeer(id, options = {}) { // eslint-disable-line require-await
     return this.peerRouting.findPeer(id, options)
   }
 
@@ -288,7 +288,7 @@ class KadDHT extends EventEmitter {
    * @param {boolean} [options.shallow] shallow query (default: false)
    * @returns {AsyncIterable<PeerId>}
    */
-  async * getClosestPeers (key, options = { shallow: false }) {
+  async * getClosestPeers(key, options = { shallow: false }) {
     for await (const pId of this.peerRouting.getClosestPeers(key, options)) {
       yield pId
     }
@@ -299,13 +299,141 @@ class KadDHT extends EventEmitter {
    * @param {PeerId} peer
    * @returns {Promise<PubKey>}
    */
-  async getPublicKey (peer) { // eslint-disable-line require-await
+  async getPublicKey(peer) { // eslint-disable-line require-await
     return this.peerRouting.getPublicKey(peer)
   }
 
+
+  /**
+   * Forward a message to all the contacts close to the recipient userId.
+   * @param {PeerId} userId - Recipient's ID
+   * @param {string} msgContent - message to send
+   * @param {string} partialAddressing - if true, a truncated address is used to send the message to ofuscate the recipient
+   * @returns {void}
+   */
+  async sendMessage(userId, msgContent, partialAddressing) {
+    const errors = []
+    //We don't want to make an RPC call to the actual peer, we want to forward a message so I look
+    //my local routing table
+    let userBuff = userId._id
+
+    let dhtId = await utils.convertPeerId(userId, cb);
+    let closest = []
+
+    if (partialAddressing) {
+      dhtId = dhtId.slice(0, dhtId.length - 1)
+      closest = this.routingTable.closestPeersPartial(dhtId, this.kBucketSize)
+    }
+    else {
+      closest = this.routingTable.closestPeers(dhtId, this.kBucketSize)
+    }
+
+
+    const privateKey = eccrypto.generatePrivate();
+    this.currentPrivateKeys.add(privateKey.toString("base64"));
+
+    let recipientPubK;
+
+    //I might have ephemeral keys to use
+    if (!this.currentRecipientPublicKeys.has(userId._idB58String)) {
+      this.currentRecipientPublicKeys.set(userId._idB58String, new Set());
+    }
+
+    const pubKeys = this.currentRecipientPublicKeys.get(
+      userId._idB58String
+    );
+
+
+    if (pubKeys.size > 0) {
+      console.log(
+        "You have %s public keys for user %s",
+        pubKeys.size,
+        userId._idB58String
+      );
+
+      const pubKeyStr = pubKeys.values().next().value;
+      recipientPubK = Buffer.from(pubKeyStr, "base64");
+
+      pubKeys.delete(pubKeyStr);
+
+      console.log("Encrypting using ephemeral key");
+      console.log(
+        "You now have %s public keys for user %s",
+        this.currentRecipientPublicKeys.get(userId._idB58String).size,
+        userId._idB58String
+      );
+    } else {
+      // I don't have ephemeral keys, send a warning and use default public key
+      console.warn(
+        "You are out of ephemeral keys for user %s",
+        userId._idB58String
+      );
+      //TODO: Expand protocol to request ephemeral keys
+      recipientPubK = userId._pubKey._key;
+      console.log("Encrypting using public key");
+    }
+
+
+    const senderPubKeyStr = crypto.keys
+      .marshalPublicKey(this.peerInfo.id.pubKey, "secp256k1")
+      .toString("base64");
+
+    const fullMsg = {
+      senderId: senderPubKeyStr,
+      msgText: msgContent
+    };
+
+    const encodedMsgContent = pbm.MsgContent.encode(fullMsg);
+
+    eccrypto
+      .encrypt(recipientPubK, encodedMsgContent, {
+        ephemPrivateKey: privateKey
+      })
+      .then(encrypted => {
+        encrypted.msgNonce = msgNonce;
+
+        const protoMsg = pbm.CypherText.encode(encrypted);
+        const content = Buffer.from(protoMsg);
+
+        const timeReceived = new Date();
+        let record = new libp2pRecord.Record(
+          userBuff,
+          content,
+          timeReceived
+        );
+
+        const msg = new Message(Message.TYPES.SEND_MSG, userBuff, 2);
+        msg.record = record;
+
+
+
+        closest.forEach(peer => {
+          try {
+            await this.network.sendMessage(peer, msg);
+          }
+          catch (error) {
+            console.log("Error when sending message to peer");
+            if (error) { errors.push(error); }
+          }
+        });
+
+      });
+
+    if (errors.length) {
+      // This should be infrequent. This means a peer we previously connected
+      // to failed to exchange the provide message. If getClosestPeers was an
+      // iterator, we could continue to pull until we announce to kBucketSize peers.
+      err = errcode(`Failed to provide to ${errors.length} of ${this.kBucketSize} peers`, 'ERR_SOME_PROVIDES_FAILED', { errors });
+      throw err;
+    }
+  }
+
+
+
+
   // ----------- Discovery -----------
 
-  _peerDiscovered (peerInfo) {
+  _peerDiscovered(peerInfo) {
     this.emit('peer', peerInfo)
   }
 
@@ -319,7 +447,7 @@ class KadDHT extends EventEmitter {
    * @returns {Promise<Array<PeerInfo>>}
    * @private
    */
-  async _nearestPeersToQuery (msg) {
+  async _nearestPeersToQuery(msg) {
     const key = await utils.convertBuffer(msg.key)
 
     const ids = this.routingTable.closestPeers(key, this.kBucketSize)
@@ -342,7 +470,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  async _betterPeersToQuery (msg, peer) {
+  async _betterPeersToQuery(msg, peer) {
     this._log('betterPeersToQuery')
     const closer = await this._nearestPeersToQuery(msg)
 
@@ -368,7 +496,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  async _checkLocalDatastore (key) {
+  async _checkLocalDatastore(key) {
     this._log('checkLocalDatastore: %b', key)
     const dsKey = utils.bufferToKey(key)
 
@@ -410,7 +538,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  async _add (peer) {
+  async _add(peer) {
     await this.routingTable.add(peer.id)
   }
 
@@ -422,7 +550,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  async _verifyRecordLocally (record) {
+  async _verifyRecordLocally(record) {
     this._log('verifyRecordLocally')
 
     await libp2pRecord.validator.verifyRecord(this.validators, record)
@@ -437,7 +565,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  _isSelf (other) {
+  _isSelf(other) {
     return other && this.peerInfo.id.id.equals(other.id)
   }
 
@@ -452,7 +580,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  async _putValueToPeer (key, rec, target) {
+  async _putValueToPeer(key, rec, target) {
     const msg = new Message(Message.TYPES.PUT_VALUE, key, 0)
     msg.record = rec
 
@@ -475,7 +603,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  async _getValueOrPeers (peer, key) {
+  async _getValueOrPeers(peer, key) {
     const msg = await this._getValueSingle(peer, key)
 
     const peers = msg.closerPeers
@@ -510,7 +638,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  async _getValueSingle (peer, key) { // eslint-disable-line require-await
+  async _getValueSingle(peer, key) { // eslint-disable-line require-await
     const msg = new Message(Message.TYPES.GET_VALUE, key, 0)
     return this.network.sendRequest(peer, msg)
   }
@@ -524,7 +652,7 @@ class KadDHT extends EventEmitter {
    * @private
    */
 
-  async _verifyRecordOnline (record) {
+  async _verifyRecordOnline(record) {
     await libp2pRecord.validator.verifyRecord(this.validators, record)
   }
 }

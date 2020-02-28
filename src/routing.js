@@ -13,7 +13,7 @@ class RoutingTable {
    * @param {PeerId} self
    * @param {number} kBucketSize
    */
-  constructor (self, kBucketSize) {
+  constructor(self, kBucketSize) {
     this.self = self
     this._onPing = this._onPing.bind(this)
 
@@ -21,7 +21,7 @@ class RoutingTable {
   }
 
   // -- Private Methods
-  async _onInit (kBucketSize) {
+  async _onInit(kBucketSize) {
     const selfKey = await utils.convertPeerId(this.self)
 
     this.kb = new KBucket({
@@ -45,7 +45,7 @@ class RoutingTable {
    * @returns {undefined}
    * @private
    */
-  _onPing (oldContacts, newContact) {
+  _onPing(oldContacts, newContact) {
     // just use the first one (k-bucket sorts from oldest to newest)
     const oldest = oldContacts[0]
 
@@ -63,7 +63,7 @@ class RoutingTable {
    *
    * @type {number}
    */
-  get size () {
+  get size() {
     return this.kb.count()
   }
 
@@ -73,7 +73,7 @@ class RoutingTable {
    * @param {PeerId} peer
    * @returns {Promise<PeerId>}
    */
-  async find (peer) {
+  async find(peer) {
     const key = await utils.convertPeerId(peer)
     const closest = this.closestPeer(key)
 
@@ -88,7 +88,7 @@ class RoutingTable {
    * @param {Buffer} key
    * @returns {PeerId|undefined}
    */
-  closestPeer (key) {
+  closestPeer(key) {
     const res = this.closestPeers(key, 1)
     if (res.length > 0) {
       return res[0]
@@ -102,8 +102,20 @@ class RoutingTable {
    * @param {number} count
    * @returns {Array<PeerId>}
    */
-  closestPeers (key, count) {
+  closestPeers(key, count) {
     return this.kb.closest(key, count).map((p) => p.peer)
+  }
+
+
+  /**
+   * Retrieve the `count`-closest peers to the given partial/ofuscated key.
+   *
+   * @param {Buffer} key
+   * @param {number} count
+   * @returns {Array<PeerId>}
+   */
+  closestPeersPartial(key, count) {
+    return this.kb.closestPartial(key, count).map((p) => p.peer)
   }
 
   /**
@@ -112,7 +124,7 @@ class RoutingTable {
    * @param {PeerId} peer
    * @returns {Promise<void>}
    */
-  async add (peer) {
+  async add(peer) {
     const id = await utils.convertPeerId(peer)
 
     this.kb.add({ id: id, peer: peer })
@@ -124,7 +136,7 @@ class RoutingTable {
    * @param {PeerId} peer
    * @returns {Promise<void>}
    */
-  async remove (peer) {
+  async remove(peer) {
     const id = await utils.convertPeerId(peer)
 
     this.kb.remove(id)

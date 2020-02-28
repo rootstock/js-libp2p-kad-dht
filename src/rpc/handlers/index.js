@@ -9,7 +9,8 @@ module.exports = (dht) => {
     [T.FIND_NODE]: require('./find-node')(dht),
     [T.ADD_PROVIDER]: require('./add-provider')(dht),
     [T.GET_PROVIDERS]: require('./get-providers')(dht),
-    [T.PING]: require('./ping')(dht)
+    [T.PING]: require('./ping')(dht),
+    [T.SEND_MSG]: require('./send-msg')(dht)
   }
 
   /**
@@ -21,7 +22,7 @@ module.exports = (dht) => {
    *
    * @private
    */
-  return function getMessageHandler (type) {
+  return function getMessageHandler(type) {
     return handlers[type]
   }
 }
