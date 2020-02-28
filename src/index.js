@@ -407,7 +407,7 @@ class KadDHT extends EventEmitter {
 
 
 
-        closest.forEach(peer => {
+        closest.forEach(async (peer) => {
           try {
             await this.network.sendMessage(peer, msg);
           }

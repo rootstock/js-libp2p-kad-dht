@@ -125,7 +125,7 @@ module.exports = (dht) => {
             msg._clusterLevelRaw = msg._clusterLevelRaw - 1 //decreases 1
             const peers = dht.routingTable.closestPeers(peer.id.id, dht.kBucketSize)
 
-            peers.forEach(nextPeer => {
+            peers.forEach(async (nextPeer) => {
                 try {
                     await dht.network.sendMessage(nextPeer, msg);
                 }
